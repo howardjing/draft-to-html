@@ -13,6 +13,7 @@
   "dependencies": {
     "classnames": "^2.2.3",
     "draft-js": "^0.3.0",
+    "immutable": "^3.7.6",
     "react": "^0.14.8",
     "react-dom": "^0.14.8"
   },

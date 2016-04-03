@@ -1,6 +1,10 @@
 import React, { Component } from 'react';
-import classNames from 'classnames';
 import { Editor, EditorState, RichUtils } from 'draft-js';
+import classNames from 'classnames';
+
+import Debug from './debug';
+
+const MAX_LIST_DEPTH = 2;
 
 class RichEditor extends Component {
   state = {
@@ -10,6 +14,14 @@ class RichEditor extends Component {
   focus = () => this.refs.editor.focus();
 
   onChange = (editorState) => this.setState({ editorState });
+
+  onTab = (e) => {
+    const { editorState } = this.state;
+    const newState = RichUtils.onTab(e, editorState, MAX_LIST_DEPTH);
+    if (newState !== editorState) {
+      this.onChange(newState);
+    }
+  }
 
   handleKeyCommand = (command) => {
     const { editorState } = this.state;
@@ -53,9 +65,11 @@ class RichEditor extends Component {
     );
 
     const className = classNames({
-        'RichEditor-editor': true,
-        'RichEditor-hidePlaceholder': shouldHide,
+      'RichEditor-editor': true,
+      'RichEditor-hidePlaceholder': shouldHide,
     });
+
+    window.editorState = editorState;
 
     return (
       <div className="RichEditor-root">
@@ -77,11 +91,14 @@ class RichEditor extends Component {
             editorState={editorState}
             handleKeyCommand={this.handleKeyCommand}
             onChange={this.onChange}
+            onTab={this.onTab}
             placeholder='Tell a story...'
             ref='editor'
             spellCheck={true}
           />
         </div>
+
+        <Debug editorState={editorState} />
       </div>
     );
   }

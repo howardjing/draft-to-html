@@ -43,6 +43,14 @@
   padding: 20px;
 }
 
+.RichEditor-editor .public-DraftStyleDefault-depth1 {
+  margin-left: 1.5em;
+}
+
+.RichEditor-editor .public-DraftStyleDefault-depth2 {
+  margin-left: 3em;
+}
+
 .RichEditor-controls {
   font-family: 'Helvetica', sans-serif;
   font-size: 14px;
