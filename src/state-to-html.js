@@ -13,6 +13,8 @@ const BLOCK_TYPES = {
   HEADER_FIVE: 'header-five',
   HEADER_SIX: 'header-six',
   BLOCKQUOTE: 'blockquote',
+  UNORDERED_LIST_ITEM: 'unordered-list-item',
+  ORDERED_LIST_ITEM: 'ordered-list-item',
 };
 
 const INLINE_STYLE_TYPES = {
@@ -20,6 +22,11 @@ const INLINE_STYLE_TYPES = {
   ITALIC: 'ITALIC',
   UNDERLINE: 'UNDERLINE',
   CODE: 'CODE',
+};
+
+const WRAPPER_BLOCK_TYPES = {
+  UNORDERED_LIST: 'unordered-list',
+  ORDERED_LIST: 'ordered-list',
 };
 
 const BLOCK_TYPES_MAP = Immutable.fromJS({
@@ -47,7 +54,24 @@ const BLOCK_TYPES_MAP = Immutable.fromJS({
   [BLOCK_TYPES.BLOCKQUOTE]: {
     tag: 'blockquote'
   },
+  [BLOCK_TYPES.UNORDERED_LIST_ITEM]: {
+    tag: 'li',
+    wrapperType: WRAPPER_BLOCK_TYPES.UNORDERED_LIST,
+  },
+  [BLOCK_TYPES.ORDERED_LIST_ITEM]: {
+    tag: 'li',
+    wrapperType: WRAPPER_BLOCK_TYPES.ORDERED_LIST,
+  },
 });
+
+const WRAPPER_BLOCK_TYPES_MAP = Immutable.fromJS({
+  [WRAPPER_BLOCK_TYPES.UNORDERED_LIST]: {
+    tag: 'ul',
+  },
+  [WRAPPER_BLOCK_TYPES.ORDERED_LIST]: {
+    tag: 'ol',
+  },
+})
 
 /**
  * NOTE:
@@ -75,14 +99,15 @@ const INLINE_STYLES_MAP = Immutable.fromJS({
 });
 
 if (__DEV__) {
-  const validateStyle = (style) => {
-    if (style.has('tag') && !html[style.get('tag')]) {
-      throw new Error(`Invalid style: html must implement ${style.get('tag')}`);
+  const validateType = (type) => {
+    if (type.has('tag') && !html[type.get('tag')]) {
+      throw new Error(`Invalid tag type: html must implement ${type.get('tag')}`);
     }
   };
 
-  BLOCK_TYPES_MAP.forEach(validateStyle);
-  INLINE_STYLES_MAP.forEach(validateStyle);
+  BLOCK_TYPES_MAP.forEach(validateType);
+  WRAPPER_BLOCK_TYPES_MAP.forEach(validateType);
+  INLINE_STYLES_MAP.forEach(validateType);
 }
 
 // list of active inline style types
@@ -94,6 +119,10 @@ class Block extends Immutable.Record({
   type: BLOCK_TYPES.UNSTYLED,
   chunks: Immutable.List(),
 }) {
+  isWrapper() {
+    return false;
+  }
+
   getLastChunk() {
     return this.get('chunks').last();
   }
@@ -138,6 +167,68 @@ class Chunk extends Immutable.Record({
   }
 }
 
+class WrapperBlock extends Immutable.Record({
+  type: WRAPPER_BLOCK_TYPES.UNORDERED_LIST,
+  blocks: Immutable.List(),
+}) {
+  isWrapper() {
+    return true;
+  }
+
+  getType() {
+    return this.get('type');
+  }
+
+
+  /**
+   * Returns how deep we are currently nested. For example
+   *
+   * ```
+   * <ul>
+   *   <li>
+   *     <ul>
+   *       <li>a</li>
+   *       <li>b</li>
+   *     </ul>
+   *   </li>
+   *   <li>
+   *   	c
+   *   </li>
+   * </ul>
+   * ```
+   *
+   * would return 0, since even though the previous block has a depth of 1,
+   * we are currently not in a nested list at all.
+   *
+   * TODO: this method is recursive, can probably cache instead
+   */
+  currentDepth(depth = 0) {
+    const lastBlock = this.getBlocks().last();
+    if (lastBlock && lastBlock.isWrapper()) {
+      return lastBlock.maxDepth(depth + 1);
+    }
+
+    return depth;
+  }
+
+  getBlocks() {
+    return this.get('blocks');
+  }
+
+  updateLastBlock(fn) {
+    const lastBlockIndex = this.getBlocks().count();
+    if (lastBlockIndex < 0) {
+      throw new Error('blocks is empty');
+    }
+
+    // return this.updateIn(['blocks', lastBlockIndex], fn);
+  }
+
+  addBlock(block) {
+    return this.update('blocks', (blocks) => blocks.push(block));
+  }
+}
+
 // === convert editor state to html ===
 
 /**
@@ -154,7 +245,7 @@ function editorStateToHtml(editorState) {
     .getBlockMap()
     .toList();
 
-  return render(blocks.map(transformBlock));
+  return render(blocks.reduce(transform, Immutable.List()));
 }
 
 // === convert draft-js data structure to html data structure ===
@@ -162,11 +253,50 @@ function editorStateToHtml(editorState) {
 /**
  * Transforms draft js block into our internal block data structure
  */
-function transformBlock(block) {
+function transform(document, block) {
   const type = block.getType();
   const text = block.getText();
+  const depth = block.getDepth();
   const characterList = block.getCharacterList();
-  return addInlineStylesToBlock(new Block({ type }), text, characterList);
+  const processedBlock = addInlineStylesToBlock(new Block({ type }), text, characterList);
+
+  if (needsWrapper(processedBlock)) {
+    const last = document.last();
+    if (last && last.isWrapper()) {
+      const lastIndex = document.count() - 1;
+      return document.update(lastIndex, (wrapper) => addBlock(wrapper, processedBlock, depth));
+    } else {
+      return document.push(wrap(processedBlock))
+    }
+  }
+
+  return document.push(processedBlock);
+}
+
+function addBlock(wrapper, processedBlock, depth) {
+  // introduce another layer of depth
+if (depth > wrapper.currentDepth()) {
+    return wrapper.updateLastBlock(wrap(processedBlock));
+  }
+
+  return wrapper.addBlock(processedBlock);
+}
+
+function needsWrapper(block) {
+  const type = block.getType();
+  return type === BLOCK_TYPES.UNORDERED_LIST_ITEM || type === BLOCK_TYPES.ORDERED_LIST_ITEM;
+}
+
+function wrap(block) {
+  return new WrapperBlock({ type: getWrapperType(block) }).addBlock(block);
+}
+
+function getWrapperType(block) {
+  const type = BLOCK_TYPES_MAP.getIn([block.getType(), 'wrapperType']);
+  if (!type) {
+    throw new Error(`${block.getType()} must specify its wrapper tag.`);
+  }
+  return type;
 }
 
 /**
@@ -216,18 +346,26 @@ function addInlineStylesToBlock(emptyBlock, text, characterList) {
 // === convert html data structure to html string ===
 
 function render(blocks) {
-  // console.log(blocks.toJS())
   return join(blocks.map(renderBlock));
 }
 
 function renderBlock(block) {
   const blockType = block.getType();
 
-  if (!BLOCK_TYPES_MAP.has(blockType)) {
+  if (!BLOCK_TYPES_MAP.has(blockType) && !WRAPPER_BLOCK_TYPES_MAP.has(blockType)) {
     throw new Error(`Unhandled block type ${blockType}`);
   }
 
+  if (block.isWrapper()) {
+    // TODO: call to unwrap is mutually recursive -- maybe there's a better way?
+    return addTagForWrapper(blockType, unwrap(block));
+  }
+
   return addTagForBlockType(blockType, applyInlineStyles(block));
+}
+
+function unwrap(wrapper) {
+  return join(wrapper.getBlocks().map(renderBlock));
 }
 
 /**
@@ -257,6 +395,10 @@ function applyInlineStylesForChunk(chunk) {
 
     return content;
   }, chunk.getText());
+}
+
+function addTagForWrapper(key, content) {
+  return addTag(WRAPPER_BLOCK_TYPES_MAP, key, content);
 }
 
 function addTagForBlockType(key, content) {

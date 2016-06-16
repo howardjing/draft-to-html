@@ -4,7 +4,7 @@ import classNames from 'classnames';
 
 import Debug from './debug';
 
-const MAX_LIST_DEPTH = 2;
+const MAX_LIST_DEPTH = 5;
 
 class RichEditor extends Component {
   state = {

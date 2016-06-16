@@ -41,9 +41,21 @@ const html = {
     return wrap('blockquote', content);
   },
 
+  ul(content) {
+    return wrap('ul', content)
+  },
+
+  ol(content) {
+    return wrap('ol', content)
+  },
+
+  li(content) {
+    return wrap('li', content)
+  },
+
   span(content, css = Immutable.Map()) {
     return wrap('span', content, css);
-  }
+  },
 };
 
 function wrap(tag, content, css) {
